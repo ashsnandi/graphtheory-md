@@ -14,7 +14,7 @@
 
 1. Download the latest release from the [GitHub Releases page](https://github.com/ashsnandi/graphtheory-md).
 2. Extract the folder and place it in your Obsidian plugins directory (`.obsidian/plugins`).
-3. Open Obsidian, go to **Settings > Community Plugins**, and enable **Obsidian LLM-Note Connector**.
+3. Open Obsidian, go to **Settings > Community Plugins**, and enable **Graph Theory**.
 
 ## Usage
 
