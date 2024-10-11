@@ -1,6 +1,6 @@
 # Graph Theory (Disclaimer: this project is a WIP)
 
-**Graph THeory** is a plugin for Obsidian that automatically identifies and connects notes with similar content or themes by leveraging a large language model (LLM). This plugin helps you discover relationships between your notes based on language patterns, making it easier to explore your ideas and create a more connected knowledge base.
+**Graph Theory** is a plugin for Obsidian that automatically identifies and connects notes with similar content or themes by leveraging a large language model (LLM). This plugin helps you discover relationships between your notes based on language patterns, making it easier to explore your ideas and create a more connected knowledge base.
 
 ## Features
 
