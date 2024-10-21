@@ -1,0 +1,176 @@
+import { App, Plugin, PluginSettingTab, Setting, Notice } from 'obsidian';
+import { request } from 'obsidian'; // helper for HTTP requests
+
+// plugin settings interface
+interface LLMNoteConnectorSettings {
+    similarityThreshold: number; 
+    connectionLimit: number; 
+    manualApproval: boolean; 
+    apiKey: string; 
+    contextWindow: number; 
+}
+
+// default settings in case user doesn't mess with them
+const DEFAULT_SETTINGS: LLMNoteConnectorSettings = {
+    similarityThreshold: 0.7, 
+    connectionLimit: 5, 
+    manualApproval: true, 
+    apiKey: '', 
+    contextWindow: 500, 
+};
+
+// main plugin class
+export default class LLMNoteConnectorPlugin extends Plugin {
+    settings: LLMNoteConnectorSettings;
+
+    async onload() {
+        console.log('llm note connector loadin...'); // log when we load
+
+        await this.loadSettings(); // fetch stored settings
+
+        // adds the command to Obsidian's command palette
+        this.addCommand({
+            id: 'connect-notes', 
+            name: 'Connect Notes Using ChatGPT', 
+            callback: () => this.connectNotes(), 
+        });
+
+        // adds settings tab
+        this.addSettingTab(new LLMNoteConnectorSettingTab(this.app, this));
+    }
+
+    // method for connecting notes using ChatGPT
+    async connectNotes() {
+        const notes = this.app.vault.getMarkdownFiles(); // get all markdown files
+        const connections = []; // will store found connections
+
+        if (!this.settings.apiKey) {
+            new Notice('API key missing. Pls add it in settings.');
+            return;
+        }
+
+        // loop over all notes and try to connect 'em
+        for (const note of notes) {
+            const content = await this.app.vault.read(note); // read note content
+            const trimmedContent = content.split(' ').slice(0, this.settings.contextWindow).join(' '); // only first X words
+            const similarNotes = await this.findSimilarNotes(trimmedContent, notes); 
+
+            // save the connections
+            connections.push({
+                note,
+                similarNotes,
+            });
+        }
+
+        new Notice('notes connected via ChatGPT.');
+    }
+
+    // makes the API call to ChatGPT for finding similar notes
+    async findSimilarNotes(content: string, notes: any[]) {
+        const prompt = `Here's a note. Find similar notes from the list below with a similarity threshold of ${this.settings.similarityThreshold}. \nNote: "${content}" \nCompare with: ${notes.map(note => note.basename).join(', ')}`;
+
+        const response = await request({
+            url: 'https://api.openai.com/v1/completions',
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${this.settings.apiKey}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                model: 'gpt-3.5-turbo', 
+                prompt,
+                max_tokens: 200,
+            }),
+        });
+
+        // parse response from GPT
+        const result = JSON.parse(response);
+        const similarNoteNames = this.extractSimilarNotes(result.choices[0].text); // get note names from response
+        return notes.filter((note) => similarNoteNames.includes(note.basename)).slice(0, this.settings.connectionLimit);
+    }
+
+    // simple regex to extract note names from response (could def improve)
+    extractSimilarNotes(responseText: string) {
+        const noteNames = responseText.match(/"(.+?)"/g); // finds strings in quotes
+        return noteNames ? noteNames.map(name => name.replace(/"/g, '')) : [];
+    }
+
+    onunload() {
+        console.log('llm note connector unloadin...'); // log when unloading
+    }
+
+    // load settings from disk
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    // save settings back to disk
+    async saveSettings() {
+        await this.saveData(this.settings);
+    }
+}
+
+// settings tab class
+class LLMNoteConnectorSettingTab extends PluginSettingTab {
+    plugin: LLMNoteConnectorPlugin;
+
+    constructor(app: App, plugin: LLMNoteConnectorPlugin) {
+        super(app, plugin); 
+        this.plugin = plugin; 
+    }
+
+    display(): void {
+        const { containerEl } = this;
+        containerEl.empty(); // clear current settings view
+
+        // title at the top of settings
+        containerEl.createEl('h2', { text: 'LLM Note Connector Settings' });
+
+        // slider to set the similarity threshold
+        new Setting(containerEl)
+            .setName('Similarity Threshold')
+            .setDesc('Set how similar notes need to be to connect.')
+            .addSlider(slider => slider
+                .setValue(this.plugin.settings.similarityThreshold)
+                .setLimits(0.1, 1, 0.1) // min, max, step
+                .onChange(async (value) => {
+                    this.plugin.settings.similarityThreshold = value;
+                    await this.plugin.saveSettings(); // save updated settings
+                }));
+
+        // slider for connection limit
+        new Setting(containerEl)
+            .setName('Connection Limit')
+            .setDesc('Max number of connections per note.')
+            .addSlider(slider => slider
+                .setValue(this.plugin.settings.connectionLimit)
+                .setLimits(1, 10, 1) // min, max, step
+                .onChange(async (value) => {
+                    this.plugin.settings.connectionLimit = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        // field for API key
+        new Setting(containerEl)
+            .setName('ChatGPT API Key')
+            .setDesc('Enter your OpenAI API key.')
+            .addText(text => text
+                .setValue(this.plugin.settings.apiKey)
+                .onChange(async (value) => {
+                    this.plugin.settings.apiKey = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        // slider for context window (how much of the note to check)
+        new Setting(containerEl)
+            .setName('Context Window')
+            .setDesc('How many words from a note to analyze for finding connections.')
+            .addSlider(slider => slider
+                .setValue(this.plugin.settings.contextWindow)
+                .setLimits(100, 1000, 50) // min, max, step
+                .onChange(async (value) => {
+                    this.plugin.settings.contextWindow = value;
+                    await this.plugin.saveSettings();
+                }));
+    }
+}
